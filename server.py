@@ -4,8 +4,35 @@ from pydantic import BaseModel
 from models import SessionLocal, Booking, Driver, User, Company, BookingStatus
 import uvicorn
 from datetime import datetime
+import asyncio
+import time
+
+# Eğer main_orchestrator veya email_parser içindeki mail kontrol fonksiyonunun adı farklıysa burayı düzenleyebilirsin
+try:
+    import main_orchestrator
+except ImportError:
+    main_orchestrator = None
 
 app = FastAPI(title="VIP Transfer Multi-Tenant SaaS")
+
+# ARKA PLAN MAIL DİNLENME GÖREVİ (FREE TIER UYUMLU)
+def check_emails_loop():
+    while True:
+        try:
+            if main_orchestrator and hasattr(main_orchestrator, 'run_once'):
+                main_orchestrator.run_once()
+            elif main_orchestrator and hasattr(main_orchestrator, 'main'):
+                main_orchestrator.main()
+            print("📧 [MAIL CHECKER]: Mailler kontrol edildi...")
+        except Exception as e:
+            print(f"⚠️ [MAIL CHECKER HATA]: {e}")
+        time.sleep(30) # 30 saniyede bir mailleri tarar
+
+@app.on_event("startup")
+async def start_mail_listener():
+    if main_orchestrator:
+        asyncio.create_task(asyncio.to_thread(check_emails_loop))
+        print("🚀 [SYSTEM]: Mail dinleyici arka planda başlatıldı!")
 
 # PYDANTIC MODELLERİ
 class LoginRequest(BaseModel):
