@@ -224,3 +224,16 @@ async def serve_driver_page(booking_id: str):
 
 if __name__ == "__main__":
     uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+@app.get("/api/v1/check-now")
+async def check_now():
+    if main_orchestrator:
+        try:
+            # main_orchestrator içindeki çalıştırma fonksiyonunu tetikler
+            if hasattr(main_orchestrator, 'run_once'):
+                main_orchestrator.run_once()
+            elif hasattr(main_orchestrator, 'main'):
+                main_orchestrator.main()
+            return {"status": "SUCCESS", "message": "Mail taraması tetiklendi."}
+        except Exception as e:
+            return {"status": "ERROR", "message": str(e)}
+    return {"status": "ERROR", "message": "main_orchestrator import edilemedi!"}
