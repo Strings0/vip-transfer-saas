@@ -27,12 +27,27 @@ class ManualAssignRequest(BaseModel):
 # 3. VERİTABANI BAŞLANGIÇ AYARLARI
 def init_db():
     session = SessionLocal()
-    if session.query(Company).count() == 0:
-        c1 = Company(id="C1", name="Doğu VIP Turizm")
-        u1 = User(id="U1", company_id="C1", username="dogu_vip", password="123")
-        d1 = Driver(id="D1", company_id="C1", full_name="Ahmet Şoför", phone="+90532111", vehicle_plate="34 VIP 01", capacity=4, current_lat=41.0082, current_lon=28.9784)
-        session.add_all([c1, u1, d1])
+    # 1. Şirket Yoksa Ekle
+    company = session.query(Company).filter(Company.id == "C1").first()
+    if not company:
+        company = Company(id="C1", name="Doğu VIP Turizm")
+        session.add(company)
         session.commit()
+
+    # 2. Kullanıcı Yoksa Ekle (dogu_vip / 123)
+    user = session.query(User).filter(User.username == "dogu_vip").first()
+    if not user:
+        u1 = User(id="U1", company_id="C1", username="dogu_vip", password="123")
+        session.add(u1)
+        session.commit()
+
+    # 3. Demo Şoför Yoksa Ekle
+    driver = session.query(Driver).filter(Driver.id == "D1").first()
+    if not driver:
+        d1 = Driver(id="D1", company_id="C1", full_name="Ahmet Şoför", phone="+90532111", vehicle_plate="34 VIP 01", capacity=4, current_lat=41.0082, current_lon=28.9784)
+        session.add(d1)
+        session.commit()
+
     session.close()
 
 init_db()
