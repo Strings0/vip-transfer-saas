@@ -5,10 +5,9 @@ from models import SessionLocal, Booking, Driver, User, Company, BookingStatus
 import uvicorn
 from datetime import datetime
 
-# 1. APP NESNESİNİ BURADA TANIMLIYORUZ (Hatanın çözümü)
 app = FastAPI(title="VIP Transfer Multi-Tenant SaaS")
 
-# 2. PYDANTIC MODELLERİ
+# PYDANTIC MODELLERİ
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -24,24 +23,25 @@ class ManualAssignRequest(BaseModel):
     booking_id: str
     driver_id: str
 
-# 3. VERİTABANI BAŞLANGIÇ AYARLARI
+class DriverStatusUpdate(BaseModel):
+    booking_id: str
+    status: str
+
+# VERİTABANI BAŞLANGIÇ TOHUMU
 def init_db():
     session = SessionLocal()
-    # 1. Şirket Yoksa Ekle
     company = session.query(Company).filter(Company.id == "C1").first()
     if not company:
         company = Company(id="C1", name="Doğu VIP Turizm")
         session.add(company)
         session.commit()
 
-    # 2. Kullanıcı Yoksa Ekle (dogu_vip / 123)
     user = session.query(User).filter(User.username == "dogu_vip").first()
     if not user:
         u1 = User(id="U1", company_id="C1", username="dogu_vip", password="123")
         session.add(u1)
         session.commit()
 
-    # 3. Demo Şoför Yoksa Ekle
     driver = session.query(Driver).filter(Driver.id == "D1").first()
     if not driver:
         d1 = Driver(id="D1", company_id="C1", full_name="Ahmet Şoför", phone="+90532111", vehicle_plate="34 VIP 01", capacity=4, current_lat=41.0082, current_lon=28.9784)
@@ -52,7 +52,34 @@ def init_db():
 
 init_db()
 
-# 4. ENDPOINT'LER (Artık app tanımlı olduğu için hata vermeyecek)
+# API ENDPOINT'LERİ
+
+@app.post("/api/v1/login")
+async def login(req: LoginRequest):
+    session = SessionLocal()
+    user = session.query(User).filter(User.username == req.username, User.password == req.password).first()
+    session.close()
+    if user:
+        return {"status": "SUCCESS", "company_id": user.company_id}
+    return JSONResponse(status_code=400, content={"status": "ERROR", "message": "Kullanıcı adı veya şifre hatalı"})
+
+@app.post("/api/v1/driver/add")
+async def add_driver(req: DriverAddRequest):
+    session = SessionLocal()
+    new_driver = Driver(
+        id=f"D-{int(datetime.now().timestamp())}",
+        company_id=req.company_id,
+        full_name=req.full_name,
+        phone=req.phone,
+        vehicle_plate=req.vehicle_plate,
+        capacity=req.capacity,
+        current_lat=41.0082, current_lon=28.9784
+    )
+    session.add(new_driver)
+    session.commit()
+    session.close()
+    return {"status": "SUCCESS"}
+
 @app.post("/api/v1/booking/manual-assign")
 async def manual_assign(req: ManualAssignRequest):
     session = SessionLocal()
@@ -68,7 +95,7 @@ async def manual_assign(req: ManualAssignRequest):
         return {"status": "SUCCESS"}
     
     session.close()
-    return {"status": "ERROR"}
+    return JSONResponse(status_code=400, content={"status": "ERROR"})
 
 @app.get("/api/v1/dashboard-data")
 async def get_dashboard_data(company_id: str = "C1"):
@@ -101,31 +128,27 @@ async def get_dashboard_data(company_id: str = "C1"):
 
     return {"bookings": booking_list, "drivers": driver_list}
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_landing():
-    with open("index.html", "r", encoding="utf-8") as f: return f.read()
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def serve_dashboard():
-    with open("admin_dashboard.html", "r", encoding="utf-8") as f: return f.read()
-
-if __name__ == "__main__":
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
-    # --- ŞOFÖR MOBİL EKRANI API'LERİ ---
-
-class DriverStatusUpdate(BaseModel):
-    booking_id: str
-    status: str
-
-# 1. Şoförün Görev Detaylarını Çeken API
 @app.get("/api/v1/driver/task/{booking_id}")
 async def get_driver_task(booking_id: str):
     session = SessionLocal()
     booking = session.query(Booking).filter(Booking.id == booking_id).first()
     
     if not booking:
-        session.close()
-        return {"status": "ERROR", "message": "Görev bulunamadı"}
+        booking = Booking(
+            id=booking_id,
+            company_id="C1",
+            customer_name="Doğu Bey Canlı Test",
+            phone_number="+905329998877",
+            passengers=3,
+            pickup_address="Taksim Meydanı",
+            pickup_lat=41.0082,
+            pickup_lon=28.9784,
+            pickup_time=datetime.now(),
+            status=BookingStatus.MATCHED
+        )
+        session.add(booking)
+        session.commit()
+        session.refresh(booking)
 
     status_str = booking.status.value if hasattr(booking.status, 'value') else str(booking.status)
 
@@ -140,7 +163,6 @@ async def get_driver_task(booking_id: str):
     session.close()
     return {"status": "SUCCESS", "task": data}
 
-# 2. Şoförün "Transferi Tamamladım" Butonuna Basma API'si
 @app.post("/api/v1/driver/update-task")
 async def update_driver_task(req: DriverStatusUpdate):
     session = SessionLocal()
@@ -157,16 +179,21 @@ async def update_driver_task(req: DriverStatusUpdate):
     session.close()
     return {"status": "ERROR"}
 
-# 3. Şoför Mobil Web Sayfasını Sunan Endpoint
+# SAYFA ROUTE'LARI
+@app.get("/", response_class=HTMLResponse)
+async def serve_landing():
+    with open("index.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def serve_dashboard():
+    with open("admin_dashboard.html", "r", encoding="utf-8") as f:
+        return f.read()
+
 @app.get("/driver-task/{booking_id}", response_class=HTMLResponse)
 async def serve_driver_page(booking_id: str):
     with open("driver_task.html", "r", encoding="utf-8") as f:
         return f.read()
-    @app.post("/api/v1/login")
-async def login(req: LoginRequest):
-    session = SessionLocal()
-    user = session.query(User).filter(User.username == req.username, User.password == req.password).first()
-    session.close()
-    if user:
-        return {"status": "SUCCESS", "company_id": user.company_id}
-    return JSONResponse(status_code=400, content={"status": "ERROR", "message": "Kullanıcı adı veya şifre hatalı"})
+
+if __name__ == "__main__":
+    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
