@@ -162,3 +162,11 @@ async def update_driver_task(req: DriverStatusUpdate):
 async def serve_driver_page(booking_id: str):
     with open("driver_task.html", "r", encoding="utf-8") as f:
         return f.read()
+    @app.post("/api/v1/login")
+async def login(req: LoginRequest):
+    session = SessionLocal()
+    user = session.query(User).filter(User.username == req.username, User.password == req.password).first()
+    session.close()
+    if user:
+        return {"status": "SUCCESS", "company_id": user.company_id}
+    return JSONResponse(status_code=400, content={"status": "ERROR", "message": "Kullanıcı adı veya şifre hatalı"})
